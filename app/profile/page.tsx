@@ -1,14 +1,57 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { useTheme } from "@/app/components/ThemeProvider";
+import { supabase } from "@/lib/supabase";
 
 export default function ProfilePage() {
   const { darkMode } = useTheme();
 
-  // TODO: AuthProvider will replace with real values
-  const user = { name: "User", email: "user@example.com", avatarUrl: null as string | null };
-  const credits = 0;
+  const [user, setUser] = useState<{ name: string; email: string; avatarUrl: string | null }>({
+    name: "User",
+    email: "",
+    avatarUrl: null,
+  });
+  const [credits, setCredits] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadProfile() {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!active || !session?.user) return;
+
+      const authUser = session.user;
+      
+      // Fetch profile data
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("full_name, credits")
+        .eq("id", authUser.id)
+        .single();
+
+      if (active) {
+        setUser({
+          name: profile?.full_name || authUser.user_metadata?.full_name || authUser.user_metadata?.name || authUser.email?.split("@")[0] || "User",
+          email: authUser.email || "",
+          avatarUrl: authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture || null,
+        });
+        setCredits(profile?.credits || 0);
+      }
+    }
+
+    loadProfile();
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) loadProfile();
+    });
+
+    return () => {
+      active = false;
+      listener.subscription.unsubscribe();
+    };
+  }, []);
 
   const bg = darkMode ? "bg-[#070b14] text-white" : "bg-[#fff8e8] text-[#111827]";
   const card = darkMode ? "border-white/10 bg-white/[0.07] shadow-black/40" : "border-black/10 bg-white/80 shadow-black/10";
